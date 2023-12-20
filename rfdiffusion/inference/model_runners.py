@@ -14,6 +14,7 @@ import torch.nn.functional as nn
 from rfdiffusion import util
 from hydra.core.hydra_config import HydraConfig
 import os
+import string
 
 from rfdiffusion.model_input_logger import pickle_function_call
 import sys
@@ -266,7 +267,47 @@ class Sampler:
         ### Parse input pdb ###
         #######################
 
-        if self.self._conf.inference.asy_motif == False:
+        if self._conf.inference.asy_motif:
+            # re-construct target features based on symmetry
+            self.target_feats = iu.process_target(self.inf_conf.input_pdb, parse_hetatom=True, center=False)
+
+            target_feats_xyz_27_sym = torch.empty((0,27,3))
+            target_feats_mask_27_sym = torch.empty((0,27))
+            target_feats_seq_sym = torch.empty((0))
+            target_feats_pdb_idx_sym = []
+            target_feats_xyz_het_sym = torch.empty((0,27,3))
+            target_feats_info_het_sym = torch.empty((0))
+
+            new_pdb_idx = []
+
+            for order in range(self.symmetry.order):
+                interface_A = string.ascii_uppercase[order*2]
+                interface_B = string.ascii_uppercase[order*2+1]
+                
+                for res in self.target_feats["pdb_idx"]:
+                    if res[0] == 'A':
+                        new_pdb_idx.append((interface_A,res[1]))
+                    if res[0] == 'B':
+                        new_pdb_idx.append((interface_B,res[1]))
+
+            for i in range(self.symmetry.order):
+                target_feats_xyz_27_sym = torch.concat((target_feats_xyz_27_sym, torch.einsum('bnj,kj->bnk', torch.clone(self.target_feats['xyz_27']), self.symmetry.sym_rots[i])), 0)
+                target_feats_mask_27_sym = torch.concat((target_feats_mask_27_sym, torch.clone(self.target_feats['mask_27'])),0)
+                target_feats_seq_sym = torch.concat((target_feats_seq_sym, torch.clone(self.target_feats['seq'])),0)
+                target_feats_pdb_idx_sym = target_feats_pdb_idx_sym + self.target_feats['pdb_idx']
+
+                if not isinstance(self.target_feats["xyz_het"], np.ndarray):
+                    target_feats_xyz_het_sym = np.concat((target_feats_xyz_het_sym, self.target_feats["xyz_het"]),0)
+                    target_feats_info_het_sym = np.concat((target_feats_info_het_sym, self.target_feats["info_het"]),0)
+            
+            self.target_feats = {'xyz_27' : target_feats_xyz_27_sym, \
+                                'mask_27' : target_feats_mask_27_sym.type('torch.BoolTensor'), \
+                                'seq' : target_feats_seq_sym.type('torch.LongTensor'), \
+                                'pdb_idx' : new_pdb_idx, \
+                                'xyz_het' : target_feats_xyz_het_sym, \
+                                'info_het' : target_feats_info_het_sym}
+            
+        else:
             self.target_feats = iu.process_target(self.inf_conf.input_pdb, parse_hetatom=True, center=False)
 
         ################################
@@ -568,6 +609,47 @@ class Sampler:
             tors_t_1: (L, ?) The updated torsion angles of the next  step.
             plddt: (L, 1) Predicted lDDT of x0.
         '''
+
+
+        if self._conf.asy_motif and t != final_step:
+            # dragging the interface
+            subunit_com_lst = []
+            un_mask_1d = [not elem for elem in self.contig_map.mask_1d]
+            x_t_unmasked = x_t[un_mask_1d]
+            unmasked_subunit_len = int(x_t_unmasked.shape[0]/self.symmetry.order)
+            sub_uppercase = string.ascii_uppercase[:self.symmetry.order*2]
+
+            for order in range(self.symmetry.order):
+                unmasked_start_i = unmasked_subunit_len*order
+                unmasked_end_i = unmasked_subunit_len*(order+1)
+
+                subunit_com_lst.append(x_t_unmasked[unmasked_start_i:unmasked_end_i].mean(dim=0))
+
+            subunit_pair_com_lst = [((subunit_com_lst[order-1].nan_to_num()+subunit_com_lst[order].nan_to_num())/2) for order in range(sampler.symmetry.order)]
+            subunit_pair_com_lst.append(subunit_pair_com_lst.pop(0)) # rotate list
+            
+            for order in range(self.symmetry.order):
+                interface_id = []
+
+                interface_A = string.ascii_uppercase[order*2]
+                interface_B = string.ascii_uppercase[order*2+1]
+
+                for i, ref in enumerate(self.contig_map.ref):    
+                    if ref[0] == interface_A or ref[0] == interface_B:
+                        interface_id.append(i)
+
+                interface_com = x_t[interface_id].mean(dim=0)
+                com_diff = subunit_pair_com_lst[order] - interface_com
+
+                for i, ref in enumerate(self.contig_map.ref):
+                    if ref[0] == interface_A or ref[0] == interface_B:
+                        if t > self.t_step_input/2:
+                            x_t[i] = x_t[i] + com_diff*3*(t/self.t_step_input)
+                        else:
+                            x_t[i] = x_t[i] + com_diff
+
+            x_t = x_t.nan_to_num()
+
         msa_masked, msa_full, seq_in, xt_in, idx_pdb, t1d, t2d, xyz_t, alpha_t = self._preprocess(
             seq_init, x_t, t)
 
