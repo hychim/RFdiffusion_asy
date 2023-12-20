@@ -146,16 +146,17 @@ class Sampler:
 
         if self._conf.inference.asy_motif:
             contigs_temp = ""
+            contigs = self._conf.contigmap.contigs[0]
             for order in range(self.symmetry.order):
                 if order == 0:
-                    contigs_newline = self._conf.contigmap.contigs.replace('X', string.ascii_uppercase[i])
-                    contigs_newline = contigs_newline.replace('Y', string.ascii_uppercase[2*chain-1])
+                    contigs_newline = contigs.replace('X', string.ascii_uppercase[order])
+                    contigs_newline = contigs_newline.replace('Y', string.ascii_uppercase[2*self.symmetry.order-1])
                     contigs_temp = contigs_temp + contigs_newline + " "
                 else:
-                    contigs_newline = self._conf.contigmap.contigs.replace('X', string.ascii_uppercase[2*i])
-                    contigs_newline = contigs_newline.replace('Y', string.ascii_uppercase[2*i-1])
+                    contigs_newline = contigs.replace('X', string.ascii_uppercase[2*order])
+                    contigs_newline = contigs_newline.replace('Y', string.ascii_uppercase[2*order-1])
                     contigs_temp = contigs_temp + contigs_newline + " "
-            self._conf.contigmap.contigs = contigs_temp
+            self._conf.contigmap.contigs = [contigs_temp[:-1]]
             self.contig_conf = self._conf.contigmap
 
         self.allatom = ComputeAllAtomCoords().to(self.device)
