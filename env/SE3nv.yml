@@ -1,4 +1,4 @@
-name: SE3nv
+name: SE3nv_asy
 channels:
   - defaults
   - conda-forge
