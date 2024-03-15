@@ -300,9 +300,9 @@ class Sampler:
 
             # must rotate before translation
             # Rotation randomness
-            rot_x = 0 #randint(0,5)     # choice([randint(-20,20),randint(160,200)])
-            rot_y = 0 #randint(0,10)
-            rot_z = randint(0,10) #randint(0,10)  
+            rot_x = np.deg2rad(0) #randint(0,5)     # choice([randint(-20,20),randint(160,200)])
+            rot_y = np.deg2rad(0) #randint(0,10)
+            rot_z = np.deg2rad(randint(0,10)) #randint(0,10)  
             rot = np.array([[np.cos(rot_y)*np.cos(rot_z),   np.sin(rot_x)*np.sin(rot_y)*np.cos(rot_z)-np.cos(rot_x)*np.sin(rot_z),  np.cos(rot_x)*np.sin(rot_y)*np.cos(rot_z)+np.sin(rot_x)*np.sin(rot_z)],
                             [np.cos(rot_y)*np.sin(rot_z),   np.sin(rot_x)*np.sin(rot_y)*np.sin(rot_z)+np.cos(rot_x)*np.cos(rot_z),  np.cos(rot_x)*np.sin(rot_y)*np.sin(rot_z)-np.sin(rot_x)*np.cos(rot_z)],
                             [-np.sin(rot_y)             ,   np.sin(rot_x)*np.cos(rot_y)                                          ,  np.cos(rot_x)*np.cos(rot_y)]], dtype=np.float32)
