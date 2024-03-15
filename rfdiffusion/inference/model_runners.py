@@ -15,6 +15,8 @@ from rfdiffusion import util
 from hydra.core.hydra_config import HydraConfig
 import os
 import string
+import random
+from random import randint, choice
 
 from rfdiffusion.model_input_logger import pickle_function_call
 import sys
@@ -144,21 +146,6 @@ class Sampler:
         else:
             self.symmetry = None
 
-        if self._conf.inference.asy_motif:
-            contigs_temp = ""
-            contigs = self._conf.contigmap.contigs[0]
-            for order in range(self.symmetry.order):
-                if order == 0:
-                    contigs_newline = contigs.replace('X', string.ascii_uppercase[order])
-                    contigs_newline = contigs_newline.replace('Y', string.ascii_uppercase[2*self.symmetry.order-1])
-                    contigs_temp = contigs_temp + contigs_newline + " "
-                else:
-                    contigs_newline = contigs.replace('X', string.ascii_uppercase[2*order])
-                    contigs_newline = contigs_newline.replace('Y', string.ascii_uppercase[2*order-1])
-                    contigs_temp = contigs_temp + contigs_newline + " "
-            self._conf.contigmap.contigs = [contigs_temp[:-1]]
-            self.contig_conf = self._conf.contigmap
-
         self.allatom = ComputeAllAtomCoords().to(self.device)
         
         if self.inf_conf.input_pdb is None:
@@ -278,13 +265,52 @@ class Sampler:
             seq_t: Starting sequence with a portion of them set to unknown.
         """
         
+        if self._conf.inference.asy_motif:
+            # for randomize the contigs
+            contigs_lst = []
+            for subcon in self._conf.contigmap.contigs[0].split("/"):
+                if "-" in subcon and subcon[0].isdigit():
+                    length_inpaint = random.randint(int(subcon.split("-")[0]), int(subcon.split("-")[1]))
+                    contigs_lst.append(str(length_inpaint))
+                else:
+                    contigs_lst.append(subcon)
+            new_contigs = "/".join(contigs_lst)
+            self._conf.contigmap.contigs = [new_contigs]
+            
+            contigs_temp = ""
+            contigs = self._conf.contigmap.contigs[0]
+            for order in range(self.symmetry.order):
+                if order == 0:
+                    contigs_newline = contigs.replace('X', string.ascii_uppercase[order])
+                    contigs_newline = contigs_newline.replace('Y', string.ascii_uppercase[2*self.symmetry.order-1])
+                    contigs_temp = contigs_temp + contigs_newline + " "
+                else:
+                    contigs_newline = contigs.replace('X', string.ascii_uppercase[2*order])
+                    contigs_newline = contigs_newline.replace('Y', string.ascii_uppercase[2*order-1])
+                    contigs_temp = contigs_temp + contigs_newline + " "
+            self._conf.contigmap.contigs = [contigs_temp[:-1]]
+            self.contig_conf = self._conf.contigmap
+        
         #######################
         ### Parse input pdb ###
         #######################
-
         if self._conf.inference.asy_motif:
             # re-construct target features based on symmetry
             self.target_feats = iu.process_target(self.inf_conf.input_pdb, parse_hetatom=True, center=False)
+
+            # must rotate before translation
+            # Rotation randomness
+            rot_x = 0 #randint(0,5)     # choice([randint(-20,20),randint(160,200)])
+            rot_y = 0 #randint(0,10)
+            rot_z = randint(0,10) #randint(0,10)  
+            rot = np.array([[np.cos(rot_y)*np.cos(rot_z),   np.sin(rot_x)*np.sin(rot_y)*np.cos(rot_z)-np.cos(rot_x)*np.sin(rot_z),  np.cos(rot_x)*np.sin(rot_y)*np.cos(rot_z)+np.sin(rot_x)*np.sin(rot_z)],
+                            [np.cos(rot_y)*np.sin(rot_z),   np.sin(rot_x)*np.sin(rot_y)*np.sin(rot_z)+np.cos(rot_x)*np.cos(rot_z),  np.cos(rot_x)*np.sin(rot_y)*np.sin(rot_z)-np.sin(rot_x)*np.cos(rot_z)],
+                            [-np.sin(rot_y)             ,   np.sin(rot_x)*np.cos(rot_y)                                          ,  np.cos(rot_x)*np.cos(rot_y)]], dtype=np.float32)
+            self.target_feats['xyz_27'] = torch.einsum('bnj,kj->bnk', self.target_feats['xyz_27'], torch.from_numpy(rot))
+
+            # Translation randomness
+            dist = randint(20,30) 
+            self.target_feats['xyz_27'] = self.target_feats['xyz_27'] + dist
 
             target_feats_xyz_27_sym = torch.empty((0,27,3))
             target_feats_mask_27_sym = torch.empty((0,27))
@@ -306,14 +332,14 @@ class Sampler:
                         new_pdb_idx.append((interface_B,res[1]))
 
             for i in range(self.symmetry.order):
-                target_feats_xyz_27_sym = torch.concat((target_feats_xyz_27_sym, torch.einsum('bnj,kj->bnk', torch.clone(self.target_feats['xyz_27']), self.symmetry.sym_rots[i])), 0)
-                target_feats_mask_27_sym = torch.concat((target_feats_mask_27_sym, torch.clone(self.target_feats['mask_27'])),0)
-                target_feats_seq_sym = torch.concat((target_feats_seq_sym, torch.clone(self.target_feats['seq'])),0)
+                target_feats_xyz_27_sym = torch.cat((target_feats_xyz_27_sym, torch.einsum('bnj,kj->bnk', torch.clone(self.target_feats['xyz_27']), self.symmetry.sym_rots[i])), 0)
+                target_feats_mask_27_sym = torch.cat((target_feats_mask_27_sym, torch.clone(self.target_feats['mask_27'])),0)
+                target_feats_seq_sym = torch.cat((target_feats_seq_sym, torch.clone(self.target_feats['seq'])),0)
                 target_feats_pdb_idx_sym = target_feats_pdb_idx_sym + self.target_feats['pdb_idx']
 
                 if not isinstance(self.target_feats["xyz_het"], np.ndarray):
-                    target_feats_xyz_het_sym = np.concat((target_feats_xyz_het_sym, self.target_feats["xyz_het"]),0)
-                    target_feats_info_het_sym = np.concat((target_feats_info_het_sym, self.target_feats["info_het"]),0)
+                    target_feats_xyz_het_sym = np.cat((target_feats_xyz_het_sym, self.target_feats["xyz_het"]),0)
+                    target_feats_info_het_sym = np.cat((target_feats_info_het_sym, self.target_feats["info_het"]),0)
             
             self.target_feats = {'xyz_27' : target_feats_xyz_27_sym, \
                                 'mask_27' : target_feats_mask_27_sym.type('torch.BoolTensor'), \

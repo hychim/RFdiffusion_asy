@@ -51,18 +51,6 @@ def main(conf: HydraConfig) -> None:
         log.info("///// NO GPU DETECTED! Falling back to CPU /////")
         log.info("////////////////////////////////////////////////")
 
-    # for randomize the contigs
-    contigs_lst = []
-    for subcon in conf.contigmap.contigs[0].split("/"):
-        if "-" in subcon and subcon[0].isdigit():
-            length_inpaint = random.randint(int(subcon.split("-")[0]), int(subcon.split("-")[1]))
-            contigs_lst.append(str(length_inpaint))
-        else:
-            contigs_lst.append(subcon)
-    new_contigs = "/".join(contigs_lst)
-    conf.contigmap.contigs = [new_contigs]
-
-
     # Initialize sampler and target/contig.
     sampler = iu.sampler_selector(conf)
 
@@ -135,7 +123,7 @@ def main(conf: HydraConfig) -> None:
 
                     for i, ref in enumerate(sampler.contig_map.ref):
                         if (ref[0] == interface_A or ref[0] == interface_B):
-                            x_t[i] = x_t[i] + com_diff*0.01
+                            x_t[i] = x_t[i] + com_diff*0.01 #randint(5,15)*0.01 need to randomize it later
 
                 x_t = x_t.nan_to_num()
 
