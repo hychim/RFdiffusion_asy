@@ -305,11 +305,6 @@ class Sampler:
 
             # must rotate before translation
             # Rotation randomness
-<<<<<<< Updated upstream
-            rot_x = np.deg2rad(randint(-10,10)) #randint(0,5)     # choice([randint(-20,20),randint(160,200)])
-            rot_y = np.deg2rad(randint(-10,10)) #randint(0,10)
-            rot_z = np.deg2rad(randint(-10,10)) #randint(0,10)  
-=======
             x_range = self._conf.inference.asy_motif_rot_range[0]
             y_range = self._conf.inference.asy_motif_rot_range[1]
             z_range = self._conf.inference.asy_motif_rot_range[2]
@@ -317,7 +312,7 @@ class Sampler:
             rot_x = np.deg2rad(choice([randint(-x_range,x_range),randint(180-x_range,180+x_range)]))
             rot_y = np.deg2rad(randint(-y_range,y_range))
             rot_z = np.deg2rad(randint(-z_range,z_range))
->>>>>>> Stashed changes
+            
             rot = np.array([[np.cos(rot_y)*np.cos(rot_z),   np.sin(rot_x)*np.sin(rot_y)*np.cos(rot_z)-np.cos(rot_x)*np.sin(rot_z),  np.cos(rot_x)*np.sin(rot_y)*np.cos(rot_z)+np.sin(rot_x)*np.sin(rot_z)],
                             [np.cos(rot_y)*np.sin(rot_z),   np.sin(rot_x)*np.sin(rot_y)*np.sin(rot_z)+np.cos(rot_x)*np.cos(rot_z),  np.cos(rot_x)*np.sin(rot_y)*np.sin(rot_z)-np.sin(rot_x)*np.cos(rot_z)],
                             [-np.sin(rot_y)             ,   np.sin(rot_x)*np.cos(rot_y)                                          ,  np.cos(rot_x)*np.cos(rot_y)]], dtype=np.float32)
