@@ -15,8 +15,8 @@ from rfdiffusion import util
 from hydra.core.hydra_config import HydraConfig
 import os
 import string
-import random
 from random import randint, choice
+import copy
 
 from rfdiffusion.model_input_logger import pickle_function_call
 import sys
@@ -265,20 +265,24 @@ class Sampler:
             seq_t: Starting sequence with a portion of them set to unknown.
         """
         
+        # change asy motif contigs format to normal format
         if self._conf.inference.asy_motif:
+            contigmap = copy.deepcopy(self._conf.contigmap)
+            
             # for randomize the contigs
             contigs_lst = []
             for subcon in self._conf.contigmap.contigs[0].split("/"):
                 if "-" in subcon and subcon[0].isdigit():
-                    length_inpaint = random.randint(int(subcon.split("-")[0]), int(subcon.split("-")[1]))
+                    length_inpaint = randint(int(subcon.split("-")[0]), int(subcon.split("-")[1]))
                     contigs_lst.append(str(length_inpaint))
                 else:
                     contigs_lst.append(subcon)
             new_contigs = "/".join(contigs_lst)
-            self._conf.contigmap.contigs = [new_contigs]
+            contigmap_contigs = [new_contigs]
             
             contigs_temp = ""
-            contigs = self._conf.contigmap.contigs[0]
+            contigs = contigmap_contigs[0]
+            print(contigs)
             for order in range(self.symmetry.order):
                 if order == 0:
                     contigs_newline = contigs.replace('X', string.ascii_uppercase[order])
@@ -288,8 +292,9 @@ class Sampler:
                     contigs_newline = contigs.replace('X', string.ascii_uppercase[2*order])
                     contigs_newline = contigs_newline.replace('Y', string.ascii_uppercase[2*order-1])
                     contigs_temp = contigs_temp + contigs_newline + " "
-            self._conf.contigmap.contigs = [contigs_temp[:-1]]
-            self.contig_conf = self._conf.contigmap
+            #self._conf.contigmap.contigs = [contigs_temp[:-1]]
+            contigmap.contigs = [contigs_temp[:-1]]
+            self.contig_conf = contigmap
         
         #######################
         ### Parse input pdb ###
@@ -300,9 +305,19 @@ class Sampler:
 
             # must rotate before translation
             # Rotation randomness
+<<<<<<< Updated upstream
             rot_x = np.deg2rad(randint(-10,10)) #randint(0,5)     # choice([randint(-20,20),randint(160,200)])
             rot_y = np.deg2rad(randint(-10,10)) #randint(0,10)
             rot_z = np.deg2rad(randint(-10,10)) #randint(0,10)  
+=======
+            x_range = self._conf.inference.asy_motif_rot_range[0]
+            y_range = self._conf.inference.asy_motif_rot_range[1]
+            z_range = self._conf.inference.asy_motif_rot_range[2]
+
+            rot_x = np.deg2rad(choice([randint(-x_range,x_range),randint(180-x_range,180+x_range)]))
+            rot_y = np.deg2rad(randint(-y_range,y_range))
+            rot_z = np.deg2rad(randint(-z_range,z_range))
+>>>>>>> Stashed changes
             rot = np.array([[np.cos(rot_y)*np.cos(rot_z),   np.sin(rot_x)*np.sin(rot_y)*np.cos(rot_z)-np.cos(rot_x)*np.sin(rot_z),  np.cos(rot_x)*np.sin(rot_y)*np.cos(rot_z)+np.sin(rot_x)*np.sin(rot_z)],
                             [np.cos(rot_y)*np.sin(rot_z),   np.sin(rot_x)*np.sin(rot_y)*np.sin(rot_z)+np.cos(rot_x)*np.cos(rot_z),  np.cos(rot_x)*np.sin(rot_y)*np.sin(rot_z)-np.sin(rot_x)*np.cos(rot_z)],
                             [-np.sin(rot_y)             ,   np.sin(rot_x)*np.cos(rot_y)                                          ,  np.cos(rot_x)*np.cos(rot_y)]], dtype=np.float32)
@@ -311,7 +326,9 @@ class Sampler:
             self.target_feats['xyz_27'] = torch.einsum('bnj,kj->bnk', self.target_feats['xyz_27'], torch.from_numpy(rot))
 
             # Translation randomness
-            dist = randint(20,30) 
+            dist_init = self._conf.inference.asy_motif_dist
+            dist_range = self._conf.inference.asy_motif_dist_range
+            dist = randint(dist_init-dist_range,dist_init+dist_range) 
             self.target_feats['xyz_27'] = self.target_feats['xyz_27'] + dist
 
             target_feats_xyz_27_sym = torch.empty((0,27,3))
