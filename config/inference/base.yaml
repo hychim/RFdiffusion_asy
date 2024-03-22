@@ -25,6 +25,9 @@ inference:
   asy_motif_rot_range: [20,20,20]
   asy_motif_dist: 25
   asy_motif_dist_range: 5
+  random_drag: True
+  final_rot: []
+  final_dist: 0
 
 contigmap:
   contigs: null

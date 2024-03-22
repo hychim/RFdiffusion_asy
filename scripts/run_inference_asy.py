@@ -123,7 +123,11 @@ def main(conf: HydraConfig) -> None:
 
                     for i, ref in enumerate(sampler.contig_map.ref):
                         if (ref[0] == interface_A or ref[0] == interface_B):
-                            x_t[i] = x_t[i] + com_diff*random.randint(5,15)*0.001*(unmasked_subunit_len/(x_t.shape[0]/sampler.symmetry.order)) #randomize*ratio of unmasked
+                            if sampler._conf.inference.random_drag == True:
+                                drag = random.randint(5,15)*0.001
+                            else:
+                                drag = 1
+                            x_t[i] = x_t[i] + com_diff*drag*(unmasked_subunit_len/(x_t.shape[0]/sampler.symmetry.order)) #randomize*ratio of unmasked
 
                 x_t = x_t.nan_to_num()
 

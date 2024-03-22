@@ -309,14 +309,15 @@ class Sampler:
             y_range = self._conf.inference.asy_motif_rot_range[1]
             z_range = self._conf.inference.asy_motif_rot_range[2]
 
-            rot_x = np.deg2rad(choice([randint(-x_range,x_range),randint(180-x_range,180+x_range)]))
-            rot_y = np.deg2rad(randint(-y_range,y_range))
-            rot_z = np.deg2rad(randint(-z_range,z_range))
-            
+            ran_x = choice([randint(-x_range,x_range),randint(180-x_range,180+x_range)])
+            ran_y = randint(-y_range,y_range)
+            ran_z = randint(-z_range,z_range)
+
+            rot_x, rot_y, rot_z = np.deg2rad(ran_x), np.deg2rad(ran_y), np.deg2rad(ran_z)
+
             rot = np.array([[np.cos(rot_y)*np.cos(rot_z),   np.sin(rot_x)*np.sin(rot_y)*np.cos(rot_z)-np.cos(rot_x)*np.sin(rot_z),  np.cos(rot_x)*np.sin(rot_y)*np.cos(rot_z)+np.sin(rot_x)*np.sin(rot_z)],
                             [np.cos(rot_y)*np.sin(rot_z),   np.sin(rot_x)*np.sin(rot_y)*np.sin(rot_z)+np.cos(rot_x)*np.cos(rot_z),  np.cos(rot_x)*np.sin(rot_y)*np.sin(rot_z)-np.sin(rot_x)*np.cos(rot_z)],
                             [-np.sin(rot_y)             ,   np.sin(rot_x)*np.cos(rot_y)                                          ,  np.cos(rot_x)*np.cos(rot_y)]], dtype=np.float32)
-            print(f'random angle init - x:{rot_x}, y:{rot_y}, z:{rot_z}')
             
             self.target_feats['xyz_27'] = torch.einsum('bnj,kj->bnk', self.target_feats['xyz_27'], torch.from_numpy(rot))
 
@@ -325,6 +326,9 @@ class Sampler:
             dist_range = self._conf.inference.asy_motif_dist_range
             dist = randint(dist_init-dist_range,dist_init+dist_range) 
             self.target_feats['xyz_27'] = self.target_feats['xyz_27'] + dist
+
+            self._conf.inference.final_rot = [ran_x,ran_y,ran_z]
+            self._conf.inference.final_dist = dist
 
             target_feats_xyz_27_sym = torch.empty((0,27,3))
             target_feats_mask_27_sym = torch.empty((0,27))
