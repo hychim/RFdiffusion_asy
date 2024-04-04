@@ -309,7 +309,11 @@ class Sampler:
             y_range = self._conf.inference.asy_motif_rot_range[1]
             z_range = self._conf.inference.asy_motif_rot_range[2]
 
-            ran_x = choice([randint(-x_range,x_range),randint(180-x_range,180+x_range)])
+            if x_range == 0:
+                ran_x = 0
+            else:
+                ran_x = choice([randint(-x_range,x_range),randint(180-x_range,180+x_range)])
+                
             ran_y = randint(-y_range,y_range)
             ran_z = randint(-z_range,z_range)
 

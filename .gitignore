@@ -17,3 +17,7 @@ tests/tests_*
 
 output/*
 outputs/*
+samples/*
+
+testing/*
+.ipynb_checkpoints/*

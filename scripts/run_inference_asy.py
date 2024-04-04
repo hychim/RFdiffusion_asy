@@ -35,6 +35,13 @@ def make_deterministic(seed=0):
     np.random.seed(seed)
     random.seed(seed)
 
+def count_motif_inter(x_t):
+    coords = x_t[:int(x_t.shape[0]/sampler.symmetry.order), 1]
+    distances = torch.sqrt(torch.sum((coords[:, None] - coords) ** 2, axis=-1))
+    interaction_map = torch.where(distances <= 8, 1, 0)
+    interaction_count = torch.sum(interaction_map, axis=0)
+    motif_interaction_count = interaction_count[sampler.contig_map.mask_1d[:int(x_t.shape[0]/sampler.symmetry.order)]]
+    return motif_interaction_count.sum()
 
 @hydra.main(version_base=None, config_path="../config/inference", config_name="base")
 def main(conf: HydraConfig) -> None:
@@ -90,6 +97,8 @@ def main(conf: HydraConfig) -> None:
 
         x_t = torch.clone(x_init)
         seq_t = torch.clone(seq_init)
+        motif_inter_init = count_motif_inter(x_init)
+
         # Loop over number of reverse diffusion time steps.
         for t in range(int(sampler.t_step_input), sampler.inf_conf.final_step - 1, -1):
             
@@ -108,6 +117,18 @@ def main(conf: HydraConfig) -> None:
                 subunit_pair_com_lst = [((subunit_com_lst[order-1].nan_to_num()+subunit_com_lst[order].nan_to_num())/2) for order in range(sampler.symmetry.order)]
                 subunit_pair_com_lst.append(subunit_pair_com_lst.pop(0)) # rotate list
 
+                # Drag setting
+                weight = sampler._conf.inference.asy_motif_weight/sampler.t_step_input
+
+                # randomize drag
+                if sampler._conf.inference.random_drag == True:
+                    ran_drag = random.randint(5,15) * 0.1 
+                else:
+                    ran_drag = 1
+                
+                motif_inter = count_motif_inter(x_t)
+                inter_drag  = motif_inter_init/motif_inter
+
                 for order in range(sampler.symmetry.order):
                     interface_id = []
 
@@ -123,11 +144,8 @@ def main(conf: HydraConfig) -> None:
 
                     for i, ref in enumerate(sampler.contig_map.ref):
                         if (ref[0] == interface_A or ref[0] == interface_B):
-                            if sampler._conf.inference.random_drag == True:
-                                drag = random.randint(5,15)*0.001
-                            else:
-                                drag = 1
-                            x_t[i] = x_t[i] + com_diff*drag*(unmasked_subunit_len/(x_t.shape[0]/sampler.symmetry.order)) #randomize*ratio of unmasked
+                            # x_t[i] = x_t[i] + com_diff * weighted random drag * motif/total ratio
+                            x_t[i] = x_t[i] + com_diff * ran_drag*inter_drag*weight * (unmasked_subunit_len/(x_t.shape[0]/sampler.symmetry.order)) 
 
                 x_t = x_t.nan_to_num()
 
