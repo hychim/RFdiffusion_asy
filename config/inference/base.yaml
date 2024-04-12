@@ -22,6 +22,7 @@ inference:
   schedule_directory_path: null
   model_directory_path: null
   asy_motif: False
+  motif_drag: True
   asy_motif_weight : 0.5
   asy_motif_rot_range: [10,10,10]
   asy_motif_dist: 25

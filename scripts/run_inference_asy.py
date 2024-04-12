@@ -35,7 +35,7 @@ def make_deterministic(seed=0):
     np.random.seed(seed)
     random.seed(seed)
 
-def count_motif_inter(x_t):
+def count_motif_inter(x_t, sampler):
     coords = x_t[:int(x_t.shape[0]/sampler.symmetry.order), 1]
     distances = torch.sqrt(torch.sum((coords[:, None] - coords) ** 2, axis=-1))
     interaction_map = torch.where(distances <= 8, 1, 0)
@@ -97,57 +97,58 @@ def main(conf: HydraConfig) -> None:
 
         x_t = torch.clone(x_init)
         seq_t = torch.clone(seq_init)
-        motif_inter_init = count_motif_inter(x_init)
+        motif_inter_init = count_motif_inter(x_init, sampler)
 
         # Loop over number of reverse diffusion time steps.
         for t in range(int(sampler.t_step_input), sampler.inf_conf.final_step - 1, -1):
             
-            if t != sampler.t_step_input:
-                subunit_com_lst = []
-                un_mask_1d = [not elem for elem in sampler.contig_map.mask_1d]
-                x_t_unmasked = x_t[un_mask_1d]
-                unmasked_subunit_len = int(x_t_unmasked.shape[0]/sampler.symmetry.order)
-                #sub_uppercase = string.ascii_uppercase[:sampler.symmetry.order*2]
+            if conf.inference.motif_drag:
+                if t != sampler.t_step_input:
+                    subunit_com_lst = []
+                    un_mask_1d = [not elem for elem in sampler.contig_map.mask_1d]
+                    x_t_unmasked = x_t[un_mask_1d]
+                    unmasked_subunit_len = int(x_t_unmasked.shape[0]/sampler.symmetry.order)
+                    #sub_uppercase = string.ascii_uppercase[:sampler.symmetry.order*2]
 
-                for order in range(sampler.symmetry.order):
-                    unmasked_start_i = unmasked_subunit_len*order
-                    unmasked_end_i = unmasked_subunit_len*(order+1)
-                    subunit_com_lst.append(x_t_unmasked[unmasked_start_i:unmasked_end_i].mean(dim=0))
+                    for order in range(sampler.symmetry.order):
+                        unmasked_start_i = unmasked_subunit_len*order
+                        unmasked_end_i = unmasked_subunit_len*(order+1)
+                        subunit_com_lst.append(x_t_unmasked[unmasked_start_i:unmasked_end_i].mean(dim=0))
 
-                subunit_pair_com_lst = [((subunit_com_lst[order-1].nan_to_num()+subunit_com_lst[order].nan_to_num())/2) for order in range(sampler.symmetry.order)]
-                subunit_pair_com_lst.append(subunit_pair_com_lst.pop(0)) # rotate list
+                    subunit_pair_com_lst = [((subunit_com_lst[order-1].nan_to_num()+subunit_com_lst[order].nan_to_num())/2) for order in range(sampler.symmetry.order)]
+                    subunit_pair_com_lst.append(subunit_pair_com_lst.pop(0)) # rotate list
 
-                # Drag setting
-                weight = sampler._conf.inference.asy_motif_weight/sampler.t_step_input
+                    # Drag setting
+                    weight = sampler._conf.inference.asy_motif_weight/sampler.t_step_input
 
-                # randomize drag
-                if sampler._conf.inference.random_drag == True:
-                    ran_drag = random.randint(5,15) * 0.1 
-                else:
-                    ran_drag = 1
-                
-                motif_inter = count_motif_inter(x_t)
-                inter_drag  = motif_inter_init/motif_inter
+                    # randomize drag
+                    if sampler._conf.inference.random_drag == True:
+                        ran_drag = random.randint(5,15) * 0.1 
+                    else:
+                        ran_drag = 1
+                    
+                    motif_inter = count_motif_inter(x_t, sampler)
+                    inter_drag  = motif_inter_init/motif_inter
 
-                for order in range(sampler.symmetry.order):
-                    interface_id = []
+                    for order in range(sampler.symmetry.order):
+                        interface_id = []
 
-                    interface_A = string.ascii_uppercase[order*2]
-                    interface_B = string.ascii_uppercase[order*2+1]
+                        interface_A = string.ascii_uppercase[order*2]
+                        interface_B = string.ascii_uppercase[order*2+1]
 
-                    for i, ref in enumerate(sampler.contig_map.ref):
-                        if ref[0] == interface_A or ref[0] == interface_B:
-                            interface_id.append(i)
+                        for i, ref in enumerate(sampler.contig_map.ref):
+                            if ref[0] == interface_A or ref[0] == interface_B:
+                                interface_id.append(i)
 
-                    interface_com = x_t[interface_id].mean(dim=0)
-                    com_diff = subunit_pair_com_lst[order] - interface_com
+                        interface_com = x_t[interface_id].mean(dim=0)
+                        com_diff = subunit_pair_com_lst[order] - interface_com
 
-                    for i, ref in enumerate(sampler.contig_map.ref):
-                        if (ref[0] == interface_A or ref[0] == interface_B):
-                            # x_t[i] = x_t[i] + com_diff * weighted random drag * motif/total ratio
-                            x_t[i] = x_t[i] + com_diff * ran_drag*inter_drag*weight * (unmasked_subunit_len/(x_t.shape[0]/sampler.symmetry.order)) 
+                        for i, ref in enumerate(sampler.contig_map.ref):
+                            if (ref[0] == interface_A or ref[0] == interface_B):
+                                # x_t[i] = x_t[i] + com_diff * weighted random drag * motif/total ratio
+                                x_t[i] = x_t[i] + com_diff * ran_drag*inter_drag*weight * (unmasked_subunit_len/(x_t.shape[0]/sampler.symmetry.order)) 
 
-                x_t = x_t.nan_to_num()
+                    x_t = x_t.nan_to_num()
 
             px0, x_t, seq_t, plddt = sampler.sample_step(
                 t=t, x_t=x_t, seq_init=seq_t, final_step=sampler.inf_conf.final_step
