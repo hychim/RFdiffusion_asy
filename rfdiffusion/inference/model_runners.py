@@ -265,37 +265,6 @@ class Sampler:
             seq_t: Starting sequence with a portion of them set to unknown.
         """
         
-        # change asy motif contigs format to normal format
-        if self._conf.inference.asy_motif:
-            contigmap = copy.deepcopy(self._conf.contigmap)
-            
-            # for randomize the contigs
-            contigs_lst = []
-            for subcon in self._conf.contigmap.contigs[0].split("/"):
-                if "-" in subcon and subcon[0].isdigit():
-                    length_inpaint = randint(int(subcon.split("-")[0]), int(subcon.split("-")[1]))
-                    contigs_lst.append(str(length_inpaint))
-                else:
-                    contigs_lst.append(subcon)
-            new_contigs = "/".join(contigs_lst)
-            contigmap_contigs = [new_contigs]
-            
-            contigs_temp = ""
-            contigs = contigmap_contigs[0]
-            print(contigs)
-            for order in range(self.symmetry.order):
-                if order == 0:
-                    contigs_newline = contigs.replace('X', string.ascii_uppercase[order])
-                    contigs_newline = contigs_newline.replace('Y', string.ascii_uppercase[2*self.symmetry.order-1])
-                    contigs_temp = contigs_temp + contigs_newline + " "
-                else:
-                    contigs_newline = contigs.replace('X', string.ascii_uppercase[2*order])
-                    contigs_newline = contigs_newline.replace('Y', string.ascii_uppercase[2*order-1])
-                    contigs_temp = contigs_temp + contigs_newline + " "
-            #self._conf.contigmap.contigs = [contigs_temp[:-1]]
-            contigmap.contigs = [contigs_temp[:-1]]
-            self.contig_conf = contigmap
-        
         #######################
         ### Parse input pdb ###
         #######################
@@ -305,20 +274,26 @@ class Sampler:
 
             # must rotate before translation
             # Rotation randomness
-            x_range = self._conf.inference.asy_motif_rot_range[0]
-            y_range = self._conf.inference.asy_motif_rot_range[1]
-            z_range = self._conf.inference.asy_motif_rot_range[2]
-
             '''
             if x_range == 0:
                 ran_x = 0
             else:
                 ran_x = choice([randint(-x_range,x_range),randint(180-x_range,180+x_range)])
             '''
-            #ran_y = choice([randint(-y_range,y_range),randint(180-y_range,180+y_range)])
-            ran_x = randint(180-x_range,180+x_range)
-            ran_y = randint(y_range,y_range)
+            #ran_x = randint(180-x_range,180+x_range)
+
+            x_range = self._conf.inference.asy_motif_rot_range[0]
+            y_range = self._conf.inference.asy_motif_rot_range[1]
+            z_range = self._conf.inference.asy_motif_rot_range[2]
+            
+            #ran_x = choice([randint(-x_range,x_range),randint(180-x_range,180+x_range)])
+            ran_y = randint(-x_range,x_range)
+            ran_y = randint(-y_range,y_range)
             ran_z = randint(-z_range,z_range)
+            
+            #ran_x = 0
+            #ran_y = 0
+            #ran_z = 180
 
             rot_x, rot_y, rot_z = np.deg2rad(ran_x), np.deg2rad(ran_y), np.deg2rad(ran_z)
 
@@ -374,11 +349,79 @@ class Sampler:
                                 'info_het' : target_feats_info_het_sym}
             
         else:
-            self.target_feats = iu.process_target(self.inf_conf.input_pdb, parse_hetatom=True, center=False)
+            self.target_feats = iu.process_target(self.inf_conf.input_pdb, parse_hetatom=True, center=False)        
 
         ################################
         ### Generate specific contig ###
         ################################
+            
+        # change asy motif contigs format to normal format
+        
+        # check motif pair matching by calculating distance
+        if self._conf.inference.asy_motif:
+            def cal_inter_A_len(pdb_idx):
+                for i, res in enumerate(pdb_idx):
+                    if i == 0:
+                        inter_A_init = res[0]
+                    elif res[0] != inter_A_init:
+                        return i
+                
+            xyz_27_splited = torch.split(self.target_feats['xyz_27'], int(self.target_feats['xyz_27'].shape[0]/self.symmetry.order))
+            pdb_idx_splited = [self.target_feats['pdb_idx'][x:x+int(len(self.target_feats['pdb_idx'])/self.symmetry.order)] for x in range(0, len(self.target_feats['pdb_idx']), int(len(self.target_feats['pdb_idx'])/self.symmetry.order))]
+
+            # calculate len of motif chain
+            inter_A_len = cal_inter_A_len(self.target_feats['pdb_idx'])
+            inter_B_len = len(pdb_idx_splited[0]) - inter_A_len
+
+            # cal dist between motif chains -> check motif matching pair
+            inter_A_xyz_27_com = torch.mean(self.target_feats['xyz_27'][:inter_A_len][:, 0], 0)
+            inter_B_xyz_27_second_com = torch.mean(xyz_27_splited[1][inter_A_len:inter_A_len+inter_B_len][:, 0], 0)
+            inter_B_xyz_27_last_com = torch.mean(xyz_27_splited[-1][inter_A_len:inter_A_len+inter_B_len][:, 0], 0)
+            inter_A_inter_B_second_dist = (inter_A_xyz_27_com-inter_B_xyz_27_second_com).pow(2).sum().sqrt()
+            inter_A_inter_B_last_dist = (inter_A_xyz_27_com-inter_B_xyz_27_last_com).pow(2).sum().sqrt()
+
+            # start building new contig map for asy
+            contigmap = copy.deepcopy(self._conf.contigmap)
+            
+            # for randomize the contigs
+            contigs_lst = []
+            for subcon in self._conf.contigmap.contigs[0].split("/"):
+                if "-" in subcon and subcon[0].isdigit():
+                    length_inpaint = randint(int(subcon.split("-")[0]), int(subcon.split("-")[1]))
+                    contigs_lst.append(str(length_inpaint))
+                else:
+                    contigs_lst.append(subcon)
+            new_contigs = "/".join(contigs_lst)
+            contigmap_contigs = [new_contigs]
+            
+            contigs_temp = ""
+            contigs = contigmap_contigs[0]
+            print(contigs)
+            if not (inter_A_inter_B_second_dist < inter_A_inter_B_last_dist):
+                for order in range(self.symmetry.order):
+                    if order == 0:
+                        contigs_newline = contigs.replace('X', string.ascii_uppercase[order])
+                        contigs_newline = contigs_newline.replace('Y', string.ascii_uppercase[2*self.symmetry.order-1])
+                        contigs_temp = contigs_temp + contigs_newline + " "
+                    else:
+                        contigs_newline = contigs.replace('X', string.ascii_uppercase[2*order])
+                        contigs_newline = contigs_newline.replace('Y', string.ascii_uppercase[2*order-1])
+                        contigs_temp = contigs_temp + contigs_newline + " "
+            else:
+                for order in range(self.symmetry.order):
+                    if order == 0:
+                        contigs_newline = contigs.replace('X', string.ascii_uppercase[2*self.symmetry.order-2])
+                        contigs_newline = contigs_newline.replace('Y', string.ascii_uppercase[22*order + 1])
+                        contigs_temp = contigs_temp + contigs_newline + " "
+                    else:
+                        contigs_newline = contigs.replace('X', string.ascii_uppercase[2*order - 2])
+                        contigs_newline = contigs_newline.replace('Y', string.ascii_uppercase[2*order + 1])
+                        contigs_temp = contigs_temp + contigs_newline + " "
+
+            print(contigs_temp[:-1])
+            contigmap.contigs = [contigs_temp[:-1]]
+            self.contig_conf = contigmap
+
 
         # Generate a specific contig from the range of possibilities specified at input
 
